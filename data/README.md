@@ -1,0 +1,1 @@
+As indicated by the README file of this project, this directory should contain the data files obtained from the competition organizers.
