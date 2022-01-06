@@ -51,6 +51,9 @@ generate_problem_eventlog <- function(eventdata) {
        possible_states = unique(eventdata$AccessionNumber))
 }
 
+# this function generates the 'behavior prototypes' of efficient and inefficient students
+# transition matrices and their unrolled vectors are calculated for both positive and negative examples
+# this function returns 2 vectors for global comparison and nothing student level is returned here
 generate_transition_vecs <- function(problem_eventlog, labels, possible_states) {
   
   true_ids <- labels %>%
@@ -90,6 +93,9 @@ generate_transition_vecs <- function(problem_eventlog, labels, possible_states) 
   
 }
 
+# this function computes several features
+# jump to the later part of this function to see the cosine similarity features
+# read the inline comments to know about other features
 generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec,
                               possible_states) {
   
@@ -101,12 +107,16 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
   
   # time spent on each problem features
   
+  # if you enter an item, you should exit it
+  # if this doesn't hold, we throw out such instances
   blacklist_problems_1 <- eventdata %>%
     filter(Observable %in% c("Enter Item", "Exit Item")) %>%
     arrange(STUDENTID, EventTime) %>%
     count(STUDENTID, AccessionNumber) %>%
     filter(n %% 2 != 0)
   
+  # you cannot enter an item twice and exit an item twice
+  # these data points are also thrown out
   blacklist_problems_2 <- eventdata %>%
     anti_join(blacklist_problems_1) %>%
     filter(Observable %in% c("Enter Item", "Exit Item")) %>%
@@ -118,6 +128,7 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
              (Observable == "Exit Item" & Observable_Next == "Exit Item")) %>%
     select(STUDENTID, AccessionNumber)
   
+  # calculating the time spent on each question
   df_calc_time_1 <- eventdata %>%
     anti_join(blacklist_problems_1) %>%
     anti_join(blacklist_problems_2) %>%
@@ -140,7 +151,7 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
     summarise(total_time = sum(Duration)) %>%
     ungroup()
   
-
+  # featurizing the time spent between each action/question
   df_hiatus <- df_calc_time_1 %>%
     filter(Observable == "Exit Item" & Observable_Next == "Enter Item") %>%
     mutate(Hiatus = (EventTime_Next - EventTime)) %>%
@@ -153,6 +164,7 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
               max_hiatus = as.numeric(max(total_hiatus))) %>%
     ungroup()
   
+  # featurizing the hiatus distribution of a student
   df_hiatus_extra <- eventdata %>%
     group_by(STUDENTID) %>%
     mutate(EventTime_Next = lead(EventTime)) %>%
@@ -170,6 +182,8 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
               n_hiatus_100_plus = sum(tdiff >= 100)) %>%
     ungroup()
   
+  # ttc means time to choice
+  # how fast do students choose the MCQ option
   df_ttc <- eventdata %>%
     filter(ItemType == "MCSS", Observable %in% c("Enter Item", "Click Choice")) %>%
     arrange(STUDENTID, AccessionNumber, EventTime) %>%
@@ -201,6 +215,9 @@ generate_features <- function(eventdata, problem_eventlog, true_tvec, false_tvec
   # cosine similarity to transition dynamics related to true and false labels
   pos_states <- possible_states
   
+  # for every student, apply the given function that calculates 3 features
+  # true_sim - cosine similarity to the positive behavior prototype
+  # false_sim - cosine similarity to the negative behavior prototype
   lapply(unique(problem_eventlog$STUDENTID), function(sel_studentid) {
     
     evts <- problem_eventlog %>%
